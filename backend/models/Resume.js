@@ -1,29 +1,38 @@
 import mongoose from 'mongoose';
 
-const resumeSchema = new mongoose.Schema({
+const ResumeSchema = new mongoose.Schema({
 	fileUrl: {
 		type: String,
-		required: true
+		required: true,
 	},
 	fileType: {
 		type: String,
-		required: true
+		required: true,
 	},
 	fileName: {
 		type: String,
-		required: true
+		required: true,
 	},
 	fileExtension: {
 		type: String,
-		required: true
+		required: true,
 	},
 	resourceType: {
 		type: String,
-		enum: ['image', 'raw', 'auto'],
-		default: 'auto'
+		default: 'base64',
+	},
+	fileSize: {
+		type: Number,
+		required: false,
+	},
+	uploadedAt: {
+		type: Date,
+		default: Date.now,
 	}
 }, {
 	timestamps: true
 });
 
-export default mongoose.model('Resume', resumeSchema);
+const Resume = mongoose.model('Resume', ResumeSchema);
+
+export default Resume;
