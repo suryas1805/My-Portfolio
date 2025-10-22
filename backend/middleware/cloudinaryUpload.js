@@ -12,43 +12,68 @@ cloudinary.config({
     secure: true
 });
 
+// Helper function to get extension from mimetype
+function getExtensionFromMimetype(mimetype) {
+    const extensionMap = {
+        'image/jpeg': 'jpg',
+        'image/jpg': 'jpg',
+        'image/png': 'png',
+        'image/gif': 'gif',
+        'image/webp': 'webp',
+        'application/pdf': 'pdf',
+        'application/msword': 'doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx'
+    };
+    return extensionMap[mimetype] || 'file';
+}
+
 const storage = new CloudinaryStorage({
     cloudinary,
     params: async (req, file) => {
+        // Get file extension
+        const originalExtension = file.originalname.includes('.')
+            ? file.originalname.split('.').pop().toLowerCase()
+            : getExtensionFromMimetype(file.mimetype);
+
         // Determine resource type based on file mimetype
         let resource_type = "auto";
-        let format = undefined;
+        let format = originalExtension;
 
         if (file.mimetype.startsWith('image/')) {
             resource_type = "image";
-            // Don't set format for images - let Cloudinary handle it
+            // For images, let Cloudinary handle format
+            format = undefined;
         } else if (file.mimetype === 'application/pdf') {
             resource_type = "raw";
+            format = "pdf";
         } else if (file.mimetype.includes('document') ||
             file.mimetype.includes('msword') ||
             file.mimetype.includes('wordprocessingml')) {
             resource_type = "raw";
+            format = originalExtension; // doc or docx
         }
+
+        // Create a clean public_id with extension for raw files
+        const timestamp = Date.now();
+        const randomString = Math.random().toString(36).substring(2, 8);
+        const public_id = `resume_${timestamp}_${randomString}`;
 
         return {
             folder: "portfolio_uploads",
             resource_type: resource_type,
-            // For raw files, use public access for easier downloading
+            public_id: public_id,
+            // IMPORTANT: For raw files, we need to specify format
+            format: format,
             access_mode: 'public',
-            // Only set format for specific cases, remove auto format
-            ...(resource_type === 'image' && {
-                transformation: [
-                    { quality: 'auto' },
-                    { format: 'auto' }
-                ]
-            })
+            use_filename: false,
+            unique_filename: true,
         };
     },
 });
 
 const upload = multer({
     storage,
-    limits: { fileSize: 10 * 1024 * 1024 },
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
     fileFilter: (req, file, cb) => {
         const allowedTypes = [
             'image/jpeg',
