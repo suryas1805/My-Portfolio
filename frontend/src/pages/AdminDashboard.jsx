@@ -155,9 +155,56 @@ export default function AdminDashboard() {
     };
 
     // ---------------- RESUME ----------------
+    const validateResumeFile = (file) => {
+        const allowedExtensions = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
+        const allowedMimeTypes = [
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'image/jpeg',
+            'image/jpg',
+            'image/png'
+        ];
+
+        const fileExtension = file.name.split('.').pop().toLowerCase();
+        const fileMimeType = file.type;
+
+        if (!allowedExtensions.includes(fileExtension)) {
+            return {
+                valid: false,
+                message: `File format not supported. Please upload files in PDF, DOCX, JPG, or PNG format only.`
+            };
+        }
+
+        if (fileMimeType && !allowedMimeTypes.includes(fileMimeType)) {
+            return {
+                valid: false,
+                message: `File type not supported. Please upload files in PDF, DOCX, JPG, or PNG format only.`
+            };
+        }
+
+        // Check file size (max 10MB)
+        const maxSize = 10 * 1024 * 1024; // 10MB in bytes
+        if (file.size > maxSize) {
+            return {
+                valid: false,
+                message: `File size too large. Maximum size is 10MB.`
+            };
+        }
+
+        return { valid: true };
+    };
+
     const uploadResume = async () => {
         if (!resumeFile) {
             alert("Please select a file to upload");
+            return;
+        }
+
+        const validation = validateResumeFile(resumeFile);
+        if (!validation.valid) {
+            alert(validation.message);
+            setResumeFile(null);
             return;
         }
 
@@ -413,6 +460,10 @@ export default function AdminDashboard() {
                         <p className="text-sm text-gray-300">
                             File: {resume.fileName || "Resume"} ({resume.fileType})
                         </p>
+                        <p className="text-xs text-gray-400 mt-1">
+                            Storage: {resume.resourceType === 'base64' ? 'Database (Base64)' : 'Cloudinary'}
+                            {resume.fileSize && ` • Size: ${(resume.fileSize / 1024 / 1024).toFixed(2)} MB`}
+                        </p>
                         <div className="flex flex-wrap gap-2 mt-3">
                             <button
                                 onClick={() => setShowResume(true)}
@@ -420,13 +471,6 @@ export default function AdminDashboard() {
                             >
                                 View Resume
                             </button>
-                            <a
-                                href={resume.fileUrl}
-                                download={resume.fileName || "resume"}
-                                className="bg-teal-500 px-4 py-2 rounded text-white hover:bg-teal-400 transition shadow text-sm"
-                            >
-                                Download Resume
-                            </a>
                             <button
                                 onClick={deleteResume}
                                 className="bg-red-600 px-4 py-2 rounded text-white hover:bg-red-500 transition shadow text-sm"
@@ -453,6 +497,10 @@ export default function AdminDashboard() {
                         {resumeUploading ? "Uploading..." : "Upload Resume"}
                     </button>
                 </div>
+
+                <p className="text-gray-400 text-xs mb-2">
+                    Supported formats: PDF, DOCX, JPG, PNG (Max 10MB)
+                </p>
 
                 {!resume && (
                     <p className="text-yellow-400 text-sm">No resume uploaded yet</p>
