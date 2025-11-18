@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import api from "../api/axios";
 import { motion } from "framer-motion";
 import { getImageUrl } from "../utils/imageUtils";
 import { FaEdit } from "react-icons/fa";
-import { MdDelete } from "react-icons/md";
+import { MdDelete, MdClose } from "react-icons/md";
 import ResumeViewer from "../components/ResumeViewer";
+import { FiPlus } from "react-icons/fi";
+import { HiDotsVertical } from "react-icons/hi";
 
 export default function AdminDashboard() {
     const { user, logout } = useAuth();
@@ -13,26 +15,27 @@ export default function AdminDashboard() {
     const [projects, setProjects] = useState([]);
     const [resume, setResume] = useState(null);
     const [enquiries, setEnquiries] = useState([]);
-
-    // Skill Management
     const [newSkill, setNewSkill] = useState("");
     const [editingSkill, setEditingSkill] = useState(null);
-    const [skillError, setSkillError] = useState("");
+    const [projectModalOpen, setProjectModalOpen] = useState(false);
+    const [replyModalOpen, setReplyModalOpen] = useState(false);
+    const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+    const [deleteData, setDeleteData] = useState(null);
+    const [openMenuId, setOpenMenuId] = useState(null);
+    const [isSending, setIsSending] = useState(false)
 
-    // Project Management
     const [newProject, setNewProject] = useState({
         title: "",
         description: "",
         techStack: "",
     });
     const [projectImage, setProjectImage] = useState(null);
+    const [imagePreview, setImagePreview] = useState(null);
     const [editingProject, setEditingProject] = useState(null);
-    const [projectError, setProjectError] = useState("");
-
-    // Resume
+    const [replyMessage, setReplyMessage] = useState("");
+    const [currentEnquiry, setCurrentEnquiry] = useState(null);
     const [resumeFile, setResumeFile] = useState(null);
     const [showResume, setShowResume] = useState(false);
-    const [resumeUploading, setResumeUploading] = useState(false);
 
     // Fetch data
     const fetchData = async () => {
@@ -42,23 +45,19 @@ export default function AdminDashboard() {
                 api.get("/projects"),
                 api.get("/enquiries"),
             ]);
+
             setSkills(skillsRes.data);
             setProjects(projectsRes.data);
             setEnquiries(enquiriesRes.data);
 
-            // Fetch resume separately to handle 404
             try {
                 const resumeRes = await api.get("/resume");
                 setResume(resumeRes.data);
             } catch (err) {
-                if (err.response?.status === 404) {
-                    setResume(null);
-                } else {
-                    console.log("Error fetching resume:", err);
-                }
+                if (err.response?.status === 404) setResume(null);
             }
         } catch (err) {
-            console.log("Error fetching data:", err);
+            console.log("Error:", err);
         }
     };
 
@@ -66,12 +65,33 @@ export default function AdminDashboard() {
         fetchData();
     }, []);
 
-    // ---------------- SKILLS ----------------
-    const addOrUpdateSkill = async () => {
-        if (!newSkill.trim()) {
-            setSkillError("Skill cannot be empty");
-            return;
+    const openDeleteModal = (type, id = null) => {
+        setDeleteData({ type, id });
+        setDeleteModalOpen(true);
+    };
+
+    const confirmDelete = async () => {
+        if (!deleteData) return;
+
+        try {
+            if (deleteData.type === "skill") {
+                await api.delete(`/skills/${deleteData.id}`);
+            } else if (deleteData.type === "project") {
+                await api.delete(`/projects/${deleteData.id}`);
+            } else if (deleteData.type === "resume") {
+                await api.delete("/resume");
+                setResume(null);
+            }
+
+            setDeleteModalOpen(false);
+            fetchData();
+        } catch (err) {
+            console.log("Delete failed:", err);
         }
+    };
+
+    const saveSkill = async () => {
+        if (!newSkill.trim()) return;
 
         try {
             if (editingSkill) {
@@ -82,41 +102,51 @@ export default function AdminDashboard() {
 
             setNewSkill("");
             setEditingSkill(null);
-            setSkillError("");
             fetchData();
         } catch {
-            setSkillError("Failed to save skill");
+            console.log("Skill save failed");
         }
     };
 
-    const deleteSkill = async (id) => {
-        await api.delete(`/skills/${id}`);
-        fetchData();
+    const openAddProjectModal = () => {
+        setEditingProject(null);
+        setNewProject({ title: "", description: "", techStack: "" });
+        setProjectImage(null);
+        setImagePreview(null);
+        setProjectModalOpen(true);
     };
 
-    const startEditSkill = (skill) => {
-        setEditingSkill(skill);
-        setNewSkill(skill.name);
+    const openEditProjectModal = (project) => {
+        setEditingProject(project);
+        setNewProject({
+            title: project.title,
+            description: project.description,
+            techStack: project.techStack?.join(", ") || "",
+        });
+        setProjectImage(null);
+        setImagePreview(getImageUrl(project.image));
+        setProjectModalOpen(true);
     };
 
-    // ---------------- PROJECTS ----------------
-    const addOrUpdateProject = async () => {
-        if (!newProject.title.trim() || !newProject.description.trim()) {
-            setProjectError("Title and Description are required");
-            return;
-        }
+    const handleProjectImageChange = (file) => {
+        setProjectImage(file);
+        setImagePreview(URL.createObjectURL(file));
+    };
+
+    const saveProject = async () => {
+        if (!newProject.title.trim() || !newProject.description.trim()) return;
 
         try {
             const formData = new FormData();
             formData.append("title", newProject.title);
             formData.append("description", newProject.description);
 
-            const techStackArray = newProject.techStack
+            const techArray = newProject.techStack
                 .split(",")
                 .map((t) => t.trim())
                 .filter(Boolean);
-            formData.append("techStack", techStackArray.join(","));
 
+            formData.append("techStack", techArray.join(","));
             if (projectImage) formData.append("image", projectImage);
 
             if (editingProject) {
@@ -129,86 +159,39 @@ export default function AdminDashboard() {
                 });
             }
 
-            setNewProject({ title: "", description: "", techStack: "" });
-            setProjectImage(null);
-            setEditingProject(null);
-            setProjectError("");
+            setProjectModalOpen(false);
             fetchData();
         } catch (err) {
             console.log("Project save failed:", err);
-            setProjectError("Failed to save project");
         }
     };
 
-    const deleteProject = async (id) => {
-        await api.delete(`/projects/${id}`);
-        fetchData();
+    const openReplyModal = (enquiry) => {
+        setCurrentEnquiry(enquiry);
+        setReplyMessage("");
+        setReplyModalOpen(true);
     };
 
-    const startEditProject = (project) => {
-        setEditingProject(project);
-        setNewProject({
-            title: project.title,
-            description: project.description,
-            techStack: project.techStack?.join(", ") || "",
-        });
-    };
+    const sendReply = async () => {
+        if (!replyMessage.trim()) return;
 
-    // ---------------- RESUME ----------------
-    const validateResumeFile = (file) => {
-        const allowedExtensions = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
-        const allowedMimeTypes = [
-            'application/pdf',
-            'application/msword',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'image/jpeg',
-            'image/jpg',
-            'image/png'
-        ];
-
-        const fileExtension = file.name.split('.').pop().toLowerCase();
-        const fileMimeType = file.type;
-
-        if (!allowedExtensions.includes(fileExtension)) {
-            return {
-                valid: false,
-                message: `File format not supported. Please upload files in PDF, DOCX, JPG, or PNG format only.`
-            };
+        try {
+            setIsSending(true)
+            await api.post(`/enquiries/${currentEnquiry._id}/reply`, {
+                reply: replyMessage,
+            });
+            setReplyModalOpen(false);
+            fetchData();
+        } catch {
+            console.log("Reply failed");
+        } finally {
+            setIsSending(false)
         }
-
-        if (fileMimeType && !allowedMimeTypes.includes(fileMimeType)) {
-            return {
-                valid: false,
-                message: `File type not supported. Please upload files in PDF, DOCX, JPG, or PNG format only.`
-            };
-        }
-
-        // Check file size (max 10MB)
-        const maxSize = 10 * 1024 * 1024; // 10MB in bytes
-        if (file.size > maxSize) {
-            return {
-                valid: false,
-                message: `File size too large. Maximum size is 10MB.`
-            };
-        }
-
-        return { valid: true };
     };
 
     const uploadResume = async () => {
-        if (!resumeFile) {
-            alert("Please select a file to upload");
-            return;
-        }
+        if (!resumeFile) return;
 
-        const validation = validateResumeFile(resumeFile);
-        if (!validation.valid) {
-            alert(validation.message);
-            setResumeFile(null);
-            return;
-        }
-
-        setResumeUploading(true);
         const formData = new FormData();
         formData.append("file", resumeFile);
 
@@ -218,79 +201,46 @@ export default function AdminDashboard() {
             });
             setResumeFile(null);
             fetchData();
-            alert("Resume uploaded successfully!");
         } catch (err) {
-            console.log("Failed to upload resume:", err);
-            alert("Failed to upload resume. Please try again.");
-        } finally {
-            setResumeUploading(false);
-        }
-    };
-
-    const deleteResume = async () => {
-        if (window.confirm("Are you sure you want to delete the resume?")) {
-            try {
-                await api.delete("/resume");
-                setResume(null);
-                alert("Resume deleted successfully!");
-            } catch (err) {
-                console.log("Failed to delete resume:", err);
-                alert("Failed to delete resume.");
-            }
-        }
-    };
-
-    // ---------------- ENQUIRIES ----------------
-    const replyEnquiry = async (enquiry) => {
-        const reply = prompt("Enter your reply to: " + enquiry.name);
-        if (!reply) return;
-        try {
-            await api.post(`/enquiries/${enquiry._id}/reply`, { reply });
-            fetchData();
-        } catch {
-            console.log("Failed to reply");
+            console.log("Resume upload failed:", err);
         }
     };
 
     if (!user)
         return (
-            <div className="text-center mt-20 text-white text-lg">
+            <div className="text-center text-white mt-20 text-lg">
                 Please login to access Admin Dashboard
             </div>
         );
 
     return (
-        <div className="min-h-screen bg-gray-900 text-white px-4 sm:px-6 md:px-10 py-6 md:py-10 overflow-x-hidden">
-            {/* Header */}
-            <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 text-center md:text-left">
-                <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold">Admin Dashboard</h1>
+        <div className="min-h-screen bg-gray-900 text-white px-6 py-10">
+            {/* HEADER */}
+            <div className="flex justify-between items-center mb-10">
+                <h1 className="text-3xl font-bold">Admin Dashboard</h1>
                 <button
                     onClick={logout}
-                    className="bg-red-600 hover:bg-red-500 px-4 py-2 rounded shadow transition text-sm sm:text-base"
+                    className="bg-red-600 hover:bg-red-500 px-4 py-2 rounded cursor-pointer"
                 >
                     Logout
                 </button>
             </div>
 
-            {/* ---------------- SKILLS ---------------- */}
-            <section className="mb-10">
-                <h2 className="text-xl sm:text-2xl font-semibold mb-4 text-teal-400">
-                    Skills
-                </h2>
-                <div className="flex flex-col sm:flex-row gap-2 mb-2 w-full">
+            {/* ====================== SKILLS ====================== */}
+            <section className="mb-12">
+                <h2 className="text-2xl font-semibold mb-4 text-teal-400">Skills</h2>
+
+                <div className="flex gap-2 mb-4">
                     <input
                         type="text"
-                        placeholder="Enter skill"
                         value={newSkill}
-                        onChange={(e) => {
-                            setNewSkill(e.target.value);
-                            setSkillError("");
-                        }}
-                        className="p-2 rounded border border-gray-300 bg-gray-800 text-white focus:outline-none focus:border-teal-400 flex-1 shadow w-full sm:w-auto"
+                        onChange={(e) => setNewSkill(e.target.value)}
+                        placeholder="Skill name"
+                        className="p-2 rounded bg-gray-800 border border-gray-600 flex-1"
                     />
                     <button
-                        onClick={addOrUpdateSkill}
-                        className="bg-teal-500 px-4 py-2 rounded hover:bg-teal-400 transition shadow text-sm sm:text-base"
+                        onClick={saveSkill}
+                        className="bg-teal-500 px-4 py-2 rounded cursor-pointer"
                     >
                         {editingSkill ? "Update" : "Add"}
                     </button>
@@ -300,36 +250,38 @@ export default function AdminDashboard() {
                                 setEditingSkill(null);
                                 setNewSkill("");
                             }}
-                            className="bg-gray-600 px-4 py-2 rounded hover:bg-gray-500 transition shadow text-sm sm:text-base"
+                            className="bg-gray-500 px-4 py-2 rounded cursor-pointer"
                         >
                             Cancel
                         </button>
                     )}
                 </div>
-                {skillError && <p className="text-red-400 text-sm mb-2">{skillError}</p>}
 
-                {/* Skills grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                {/* SKILL LIST */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                     {skills.map((s) => (
                         <motion.div
                             key={s._id}
-                            initial={{ opacity: 0, y: -5 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="bg-gray-800 px-3 py-2 rounded flex items-center justify-between shadow text-sm sm:text-base truncate"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="bg-gray-800 px-3 py-2 rounded flex justify-between items-center"
                         >
-                            <span className="truncate">{s.name}</span>
-                            <div className="flex gap-1 shrink-0">
+                            <span>{s.name}</span>
+                            <div className="flex gap-2">
                                 <button
-                                    onClick={() => startEditSkill(s)}
-                                    className="bg-blue-500 p-1.5 rounded-full hover:bg-blue-400 transition"
+                                    onClick={() => {
+                                        setEditingSkill(s);
+                                        setNewSkill(s.name);
+                                    }}
+                                    className="bg-blue-500 p-2 rounded-full cursor-pointer"
                                 >
-                                    <FaEdit size={12} />
+                                    <FaEdit size={14} />
                                 </button>
                                 <button
-                                    onClick={() => deleteSkill(s._id)}
-                                    className="bg-red-600 p-1.5 rounded-full hover:bg-red-500 transition"
+                                    onClick={() => openDeleteModal("skill", s._id)}
+                                    className="bg-red-600 p-2 rounded-full cursor-pointer"
                                 >
-                                    <MdDelete size={12} />
+                                    <MdDelete size={14} />
                                 </button>
                             </div>
                         </motion.div>
@@ -337,84 +289,81 @@ export default function AdminDashboard() {
                 </div>
             </section>
 
-            {/* ---------------- PROJECTS ---------------- */}
-            <section className="mb-10">
-                <h2 className="text-xl sm:text-2xl font-semibold mb-4 text-teal-400">
-                    Projects
-                </h2>
-                <div className="flex flex-col gap-2 mb-6 w-full max-w-2xl">
-                    <input
-                        type="text"
-                        placeholder="Title"
-                        value={newProject.title}
-                        onChange={(e) => setNewProject({ ...newProject, title: e.target.value })}
-                        className="p-2 rounded border border-gray-300 bg-gray-800 text-white focus:outline-none focus:border-teal-400 shadow"
-                    />
-                    <textarea
-                        placeholder="Description"
-                        value={newProject.description}
-                        onChange={(e) =>
-                            setNewProject({ ...newProject, description: e.target.value })
-                        }
-                        className="p-2 rounded border border-gray-300 bg-gray-800 text-white focus:outline-none focus:border-teal-400 shadow h-[140px]"
-                    />
-                    <input
-                        type="text"
-                        placeholder="Tech Stack (comma separated)"
-                        value={newProject.techStack}
-                        onChange={(e) =>
-                            setNewProject({ ...newProject, techStack: e.target.value })
-                        }
-                        className="p-2 rounded border border-gray-300 bg-gray-800 text-white focus:outline-none focus:border-teal-400 shadow"
-                    />
-                    <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => setProjectImage(e.target.files[0])}
-                        className="p-2 rounded border border-gray-300 bg-gray-800 text-white shadow focus:outline-none focus:border-teal-400"
-                    />
-                    <div className="flex flex-wrap gap-2">
-                        <button
-                            onClick={addOrUpdateProject}
-                            className="bg-teal-500 px-4 py-2 rounded hover:bg-teal-400 transition shadow text-sm sm:text-base"
-                        >
-                            {editingProject ? "Update Project" : "Add Project"}
-                        </button>
-                        {editingProject && (
-                            <button
-                                onClick={() => {
-                                    setEditingProject(null);
-                                    setNewProject({ title: "", description: "", techStack: "" });
-                                    setProjectImage(null);
-                                }}
-                                className="bg-gray-600 px-4 py-2 rounded hover:bg-gray-500 transition shadow text-sm sm:text-base"
-                            >
-                                Cancel
-                            </button>
-                        )}
-                    </div>
-                    {projectError && <p className="text-red-400 text-sm">{projectError}</p>}
+            {/* ====================== PROJECTS ====================== */}
+            <section className="mb-12">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-2xl font-semibold text-teal-400">
+                        Projects
+                    </h2>
+                    <button
+                        onClick={openAddProjectModal}
+                        className="bg-teal-500 px-4 py-2 rounded cursor-pointer"
+                    >
+                        Add Project
+                    </button>
                 </div>
 
-                {/* Projects List */}
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                     {projects.map((p) => (
                         <motion.div
                             key={p._id}
-                            initial={{ opacity: 0, y: -5 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="bg-gray-800 p-4 rounded flex flex-col justify-between shadow"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="bg-gray-800 p-4 rounded relative"
                         >
-                            <div className="flex flex-col gap-2">
-                                <div className="w-full aspect-video bg-gray-700 rounded overflow-hidden">
-                                    <img
-                                        src={getImageUrl(p?.image)}
-                                        alt={p.title}
-                                        className="w-full h-full object-cover"
-                                    />
-                                </div>
-                                <h3 className="font-bold text-lg">{p.title}</h3>
-                                <p className="text-gray-300 text-sm">{p.description}</p>
+                            {/* Image wrapper with menu */}
+                            <div className="relative">
+                                <img
+                                    src={getImageUrl(p.image)}
+                                    className="w-full h-48 object-cover rounded mb-3"
+                                />
+
+                                {/* Three dots button */}
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setOpenMenuId(openMenuId === p._id ? null : p._id);
+                                    }}
+                                    className="absolute top-2 right-2 bg-black/60 text-white p-2 rounded-full cursor-pointer hover:bg-black/80"
+                                >
+                                    <HiDotsVertical size={18} />
+                                </button>
+
+                                {/* Dropdown Menu */}
+                                {openMenuId === p._id && (
+                                    <motion.div
+                                        initial={{ opacity: 0, scale: 0.9, y: -5 }}
+                                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                                        exit={{ opacity: 0, scale: 0.9, y: -5 }}
+                                        className="absolute top-12 right-2 bg-gray-900 border border-gray-700 rounded-lg shadow-lg w-32 py-2 z-40"
+                                    >
+                                        <button
+                                            onClick={() => {
+                                                setOpenMenuId(null);
+                                                openEditProjectModal(p);
+                                            }}
+                                            className="w-full flex items-center gap-2 px-4 py-2 hover:bg-gray-800 cursor-pointer text-sm"
+                                        >
+                                            <FaEdit size={14} /> Edit
+                                        </button>
+
+                                        <button
+                                            onClick={() => {
+                                                setOpenMenuId(null);
+                                                openDeleteModal('project', p._id);
+                                            }}
+                                            className="w-full flex items-center gap-2 px-4 py-2 hover:bg-gray-800 cursor-pointer text-sm text-red-400"
+                                        >
+                                            <MdDelete size={16} /> Delete
+                                        </button>
+                                    </motion.div>
+                                )}
+                            </div>
+
+                            <h3 className="font-bold text-lg">{p.title}</h3>
+                            <p className="text-gray-300">{p.description}</p>
+
+                            <div className="my-2">
                                 {p.techStack?.length > 0 && (
                                     <div className="flex flex-wrap gap-1 mt-1">
                                         {p.techStack.map((tech, i) => (
@@ -428,83 +377,58 @@ export default function AdminDashboard() {
                                     </div>
                                 )}
                             </div>
-                            <div className="flex gap-2 mt-3">
-                                <button
-                                    onClick={() => startEditProject(p)}
-                                    className="bg-blue-500 p-2 rounded-full hover:bg-blue-400 transition"
-                                >
-                                    <FaEdit />
-                                </button>
-                                <button
-                                    onClick={() => deleteProject(p._id)}
-                                    className="bg-red-600 p-2 rounded-full hover:bg-red-500 transition"
-                                >
-                                    <MdDelete />
-                                </button>
-                            </div>
                         </motion.div>
+
                     ))}
                 </div>
             </section>
 
-            {/* ---------------- RESUME ---------------- */}
-            <section className="mb-10">
-                <h2 className="text-xl sm:text-2xl font-semibold mb-4 text-teal-400">
+            {/* ====================== RESUME ====================== */}
+            <section className="mb-12">
+                <h2 className="text-2xl font-semibold text-teal-400 mb-4">
                     Resume
                 </h2>
 
-                {/* Current Resume Info */}
-                {resume && (
-                    <div className="mb-4 p-4 bg-gray-800 rounded shadow">
-                        <p className="text-green-400 mb-2">✓ Resume uploaded successfully</p>
-                        <p className="text-sm text-gray-300">
-                            File: {resume.fileName || "Resume"} ({resume.fileType})
+                {resume ? (
+                    <div className="bg-gray-800 p-4 rounded">
+                        <p className="text-green-400 mb-2">
+                            ✓ Resume uploaded successfully
                         </p>
-                        <p className="text-xs text-gray-400 mt-1">
-                            Storage: {resume.resourceType === 'base64' ? 'Database (Base64)' : 'Cloudinary'}
-                            {resume.fileSize && ` • Size: ${(resume.fileSize / 1024 / 1024).toFixed(2)} MB`}
-                        </p>
-                        <div className="flex flex-wrap gap-2 mt-3">
+
+                        <div className="flex gap-2 mt-3">
                             <button
                                 onClick={() => setShowResume(true)}
-                                className="bg-blue-500 px-4 py-2 rounded text-white hover:bg-blue-400 transition shadow text-sm"
+                                className="bg-blue-500 px-4 py-1.5 rounded cursor-pointer"
                             >
-                                View Resume
+                                View
                             </button>
                             <button
-                                onClick={deleteResume}
-                                className="bg-red-600 px-4 py-2 rounded text-white hover:bg-red-500 transition shadow text-sm"
+                                onClick={() => openDeleteModal("resume")}
+                                className="bg-red-600 px-4 py-1.5 rounded cursor-pointer"
                             >
-                                Delete Resume
+                                Delete
                             </button>
                         </div>
                     </div>
+                ) : (
+                    <p className="text-yellow-300 mb-2">No resume uploaded</p>
                 )}
 
-                {/* Upload Section */}
-                <div className="flex flex-col sm:flex-row gap-2 mb-3">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 mt-4 w-full">
                     <input
                         type="file"
-                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
                         onChange={(e) => setResumeFile(e.target.files[0])}
-                        className="p-2 rounded border border-gray-300 bg-gray-800 text-white shadow focus:outline-none focus:border-teal-400 flex-1"
+                        className="bg-gray-800 p-2 rounded border border-gray-600 w-full sm:flex-1 text-sm sm:text-base"
                     />
+
                     <button
                         onClick={uploadResume}
-                        disabled={resumeUploading || !resumeFile}
-                        className="bg-teal-500 px-4 py-2 rounded hover:bg-teal-400 disabled:bg-gray-600 disabled:cursor-not-allowed transition shadow text-sm sm:text-base flex items-center gap-2"
+                        className="bg-teal-500 px-4 py-2 rounded cursor-pointer w-full sm:w-auto text-sm sm:text-base text-white"
                     >
-                        {resumeUploading ? "Uploading..." : "Upload Resume"}
+                        Upload
                     </button>
                 </div>
 
-                <p className="text-gray-400 text-xs mb-2">
-                    Supported formats: PDF, DOCX, JPG, PNG (Max 10MB)
-                </p>
-
-                {!resume && (
-                    <p className="text-yellow-400 text-sm">No resume uploaded yet</p>
-                )}
 
                 {showResume && resume && (
                     <ResumeViewer
@@ -512,45 +436,194 @@ export default function AdminDashboard() {
                         fileType={resume.fileType}
                         fileName={resume.fileName}
                         fileExtension={resume.fileExtension}
-                        resourceType={resume.resourceType}
                         onClose={() => setShowResume(false)}
                     />
                 )}
             </section>
 
-            {/* ---------------- ENQUIRIES ---------------- */}
-            <section className="mb-10">
-                <h2 className="text-xl sm:text-2xl font-semibold mb-4 text-teal-400">
+            {/* ====================== ENQUIRIES ====================== */}
+            <section className="mb-12">
+                <h2 className="text-2xl font-semibold text-teal-400 mb-4">
                     Enquiries
                 </h2>
-                <div className="flex flex-col gap-3">
-                    {enquiries.map((e) => (
-                        <motion.div
-                            key={e._id}
-                            initial={{ opacity: 0, y: -5 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="bg-gray-800 p-4 rounded flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 shadow"
-                        >
-                            <div className="w-full sm:w-auto">
-                                <p className="text-sm sm:text-base">
-                                    <span className="font-bold text-white">{e.name}</span>{" "}
-                                    <span className="text-gray-300 break-all">({e.email})</span>
+
+                {enquiries.length > 0 ? enquiries.map((e) => (
+                    <motion.div
+                        key={e._id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="bg-gray-800 p-4 rounded mb-3 flex justify-between"
+                    >
+                        <div>
+                            <p>
+                                <span className="font-bold">{e.name}</span> ({e.email})
+                            </p>
+                            <p className="text-gray-300">{e.message}</p>
+                            {e.replyMessage && (
+                                <p className="text-teal-400 text-sm mt-1">
+                                    Reply: {e.replyMessage}
                                 </p>
-                                <p className="text-gray-200 text-sm">{e.message}</p>
-                                {e.reply && (
-                                    <p className="text-teal-300 text-sm mt-1">Reply: {e.reply}</p>
-                                )}
-                            </div>
-                            <button
-                                onClick={() => replyEnquiry(e)}
-                                className="bg-teal-500 px-3 py-1.5 rounded hover:bg-teal-400 transition shadow text-sm sm:text-base w-full sm:w-auto"
-                            >
-                                Reply
-                            </button>
-                        </motion.div>
-                    ))}
-                </div>
+                            )}
+                        </div>
+
+                        {!e.replyMessage && <button
+                            onClick={() => openReplyModal(e)}
+                            className="bg-teal-500 px-3 py-1 rounded h-fit cursor-pointer"
+                        >
+                            Reply
+                        </button>}
+                    </motion.div>
+                )) : <div>
+                    <p>No enquires received</p>
+                </div>}
             </section>
+
+            {/* PROJECT MODAL */}
+            {projectModalOpen && (
+                <div className="fixed inset-0 bg-black/60 bg-opacity-60 flex justify-center items-center z-50">
+                    <div className="bg-gray-800 p-6 rounded-lg w-full max-w-lg relative">
+
+                        <button
+                            onClick={() => setProjectModalOpen(false)}
+                            className="absolute top-3 right-3 text-white cursor-pointer"
+                        >
+                            <MdClose size={24} />
+                        </button>
+
+                        <h2 className="text-xl font-bold mb-4 text-teal-400">
+                            {editingProject ? "Edit Project" : "Add Project"}
+                        </h2>
+
+                        <div className="flex flex-col gap-3">
+                            <input
+                                type="text"
+                                placeholder="Title"
+                                value={newProject.title}
+                                onChange={(e) =>
+                                    setNewProject({ ...newProject, title: e.target.value })
+                                }
+                                className="p-2 rounded bg-gray-700 border border-gray-600"
+                            />
+
+                            <textarea
+                                placeholder="Description"
+                                value={newProject.description}
+                                onChange={(e) =>
+                                    setNewProject({ ...newProject, description: e.target.value })
+                                }
+                                className="p-2 rounded bg-gray-700 border border-gray-600 h-28"
+                            />
+
+                            <input
+                                type="text"
+                                placeholder="Tech Stack (comma separated)"
+                                value={newProject.techStack}
+                                onChange={(e) =>
+                                    setNewProject({ ...newProject, techStack: e.target.value })
+                                }
+                                className="p-2 rounded bg-gray-700 border border-gray-600"
+                            />
+
+                            {/* Image Upload */}
+                            <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => handleProjectImageChange(e.target.files[0])}
+                                className="p-2 bg-gray-700 border border-gray-600 rounded"
+                            />
+
+                            {/* Image Preview */}
+                            {imagePreview && (
+                                <img
+                                    src={imagePreview}
+                                    className="w-full h-40 object-cover rounded"
+                                />
+                            )}
+
+                            <button
+                                onClick={saveProject}
+                                className="bg-teal-500 mt-3 py-2 rounded cursor-pointer"
+                            >
+                                {editingProject ? "Update Project" : "Add Project"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* REPLY MODAL */}
+            {replyModalOpen && (
+                <div className="fixed inset-0 bg-black/60 bg-opacity-60 z-50 flex justify-center items-center">
+                    <div className="bg-gray-800 p-6 rounded-lg w-full max-w-md relative">
+
+                        <button
+                            onClick={() => setReplyModalOpen(false)}
+                            className="absolute top-3 right-3 cursor-pointer"
+                        >
+                            <MdClose size={24} />
+                        </button>
+
+                        <h2 className="text-xl font-bold text-teal-400 mb-3">
+                            Reply to {currentEnquiry?.name}
+                        </h2>
+
+                        <p className="text-sm text-gray-300 my-2">To: <span className="font-medium text-white">{currentEnquiry?.email}</span></p>
+
+                        <textarea
+                            value={replyMessage}
+                            onChange={(e) => setReplyMessage(e.target.value)}
+                            placeholder="Type your reply"
+                            className="bg-gray-700 p-2 rounded w-full h-32 border-2 border-teal-600 outline-0"
+                        />
+
+                        <button
+                            onClick={sendReply}
+                            className="bg-teal-500 w-full py-2 rounded mt-3 font-semibold cursor-pointer"
+                            disabled={isSending}
+                        >
+                            {isSending ? "Sending..." : "Send Reply"}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* DELETE CONFIRMATION */}
+            {deleteModalOpen && (
+                <div className="fixed inset-0 bg-black/60 bg-opacity-60 flex justify-center items-center z-50">
+                    <div className="bg-gray-800 p-6 rounded-lg w-full max-w-sm text-center relative">
+
+                        <button
+                            onClick={() => setDeleteModalOpen(false)}
+                            className="absolute top-3 right-3 cursor-pointer"
+                        >
+                            <MdClose size={24} />
+                        </button>
+
+                        <h2 className="text-xl font-bold text-red-400 mb-4">
+                            Confirm Delete
+                        </h2>
+
+                        <p className="text-gray-300 mb-4">
+                            Are you sure you want to delete this {deleteData?.type}?
+                        </p>
+
+                        <div className="flex justify-between gap-3">
+                            <button
+                                onClick={() => setDeleteModalOpen(false)}
+                                className="bg-gray-600 w-1/2 py-2 rounded cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmDelete}
+                                className="bg-red-600 w-1/2 py-2 rounded cursor-pointer"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

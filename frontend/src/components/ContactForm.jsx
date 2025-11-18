@@ -4,15 +4,22 @@ import api from "../api/axios";
 export default function ContactForm() {
     const [form, setForm] = useState({ name: "", email: "", message: "" });
     const [success, setSuccess] = useState("");
+    const [isSending, setIsSending] = useState(false)
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
+            setIsSending(true)
             await api.post("/enquiries", form);
             setSuccess("Message sent successfully!");
             setForm({ name: "", email: "", message: "" });
+            setTimeout(() => {
+                setSuccess('')
+            }, 4000)
         } catch (err) {
             setSuccess("Error sending message.");
+        } finally {
+            setIsSending(false)
         }
     };
 
@@ -54,8 +61,9 @@ export default function ContactForm() {
                     />
                     <button
                         className="bg-teal-500 hover:bg-teal-400 text-white font-semibold px-6 py-3 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer"
+                        disabled={isSending}
                     >
-                        Send
+                        {isSending ? 'Sending...' : 'Send'}
                     </button>
                 </form>
                 {success && (
