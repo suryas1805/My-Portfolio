@@ -6,6 +6,7 @@ const EnquirySchema = new Schema(
 		email: String,
 		message: String,
 		replied: { type: Boolean, default: false },
+		replyMessage: String
 	},
 	{ timestamps: true }
 );
