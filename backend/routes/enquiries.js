@@ -1,3 +1,5 @@
+import dotenv from 'dotenv'
+dotenv.config()
 import express from 'express';
 import Enquiry from '../models/Enquiry.js';
 import { authMiddleware } from '../middleware/authMiddleware.js';
