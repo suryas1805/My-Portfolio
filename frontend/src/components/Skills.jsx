@@ -22,7 +22,8 @@ import {
     SiSqlite,
     SiTailwindcss,
     SiPostman,
-    SiShadcnui
+    SiShadcnui,
+    SiExpo
 } from "react-icons/si";
 import { VscVscode } from "react-icons/vsc";
 import { TbApi } from "react-icons/tb";
@@ -83,6 +84,8 @@ export default function Skills() {
                 return <VscVscode className="text-blue-500 text-3xl" />
             case "postman":
                 return <SiPostman className="text-orange-500 text-3xl" />;
+            case "expo":
+                return <SiExpo className="text-3xl" color="#000020" />;
             default:
                 return <div className="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center text-white font-bold">?</div>;
         }

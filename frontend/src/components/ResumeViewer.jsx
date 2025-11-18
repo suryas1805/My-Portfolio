@@ -2,52 +2,42 @@ import React, { useState, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { FaDownload, FaTimes, FaFilePdf, FaFileWord, FaFileImage, FaExternalLinkAlt } from "react-icons/fa";
 
-// Configure PDF.js worker with fallback
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+// Configure PDF.js worker with a more reliable approach
+const PDFJS_VERSION = '3.11.174'; // Use a stable version
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.js`;
 
-export default function ResumeViewer({ fileUrl, fileType, fileName, fileExtension, onClose }) {
+export default function ResumeViewer({ fileUrl, fileType, fileName, fileExtension, resourceType, onClose }) {
     const [numPages, setNumPages] = useState(null);
     const [pageNumber, setPageNumber] = useState(1);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [useFallback, setUseFallback] = useState(false);
+    const [blobUrl, setBlobUrl] = useState(null);
+    const [pdfFile, setPdfFile] = useState(null);
+    const [windowSize, setWindowSize] = useState({
+        width: typeof window !== 'undefined' ? window.innerWidth : 1200,
+        height: typeof window !== 'undefined' ? window.innerHeight : 800
+    });
 
-    // Get direct URL for preview - simplified approach
-    const getPreviewUrl = () => {
-        if (!fileUrl) return fileUrl;
+    // Handle window resize for responsive design
+    useEffect(() => {
+        const handleResize = () => {
+            setWindowSize({
+                width: window.innerWidth,
+                height: window.innerHeight
+            });
+        };
 
-        let url = fileUrl.replace('http://', 'https://');
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
-        // Remove any existing query parameters that might cause issues
-        if (url.includes('?')) {
-            url = url.split('?')[0];
-        }
+    // Extract extension from various sources
+    const getFileExtension = () => {
+        if (fileExtension) return fileExtension.toLowerCase();
 
-        return url;
-    };
-
-    // Get download URL with proper filename
-    const getDownloadUrl = () => {
-        let downloadUrl = fileUrl.replace('http://', 'https://');
-        const ext = fileExtension || getExtensionFromType(fileType, fileName);
-        const downloadName = getDownloadFileName();
-
-        if (downloadUrl.includes('cloudinary.com')) {
-            if (downloadUrl.includes('?')) {
-                downloadUrl += `&fl_attachment&filename=${encodeURIComponent(downloadName)}`;
-            } else {
-                downloadUrl += `?fl_attachment&filename=${encodeURIComponent(downloadName)}`;
-            }
-        }
-
-        return downloadUrl;
-    };
-
-    const getExtensionFromType = (type, name) => {
-        if (fileExtension) return fileExtension;
-
-        if (name && name.includes('.')) {
-            return name.split('.').pop().toLowerCase();
+        if (fileName && fileName.includes('.')) {
+            return fileName.split('.').pop().toLowerCase();
         }
 
         const extensionMap = {
@@ -61,64 +51,115 @@ export default function ResumeViewer({ fileUrl, fileType, fileName, fileExtensio
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx'
         };
 
-        return extensionMap[type] || 'file';
+        return extensionMap[fileType] || 'pdf';
     };
 
-    const getDownloadFileName = () => {
-        const ext = fileExtension || getExtensionFromType(fileType, fileName);
-        const baseName = "Surya S Resume";
+    const ext = getFileExtension();
 
-        // If the original filename is meaningful, use it, otherwise use the standard name
-        if (fileName && !fileName.toLowerCase().includes('resume')) {
-            // Extract name without extension and combine with standard name
-            const originalName = fileName.includes('.')
-                ? fileName.split('.').slice(0, -1).join('.')
-                : fileName;
-            return `${originalName} - ${baseName}.${ext}`;
+    // Convert Base64 to Blob for better performance
+    const convertBase64ToBlob = (base64Data) => {
+        try {
+            // Extract the actual base64 data
+            const base64String = base64Data.split(',')[1] || base64Data;
+
+            // Convert to binary
+            const binaryString = atob(base64String);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+
+            // Create blob
+            return new Blob([bytes], { type: fileType || 'application/pdf' });
+        } catch (err) {
+            console.error('Error converting base64 to blob:', err);
+            return null;
+        }
+    };
+
+    // Get preview URL - converts base64 to blob URL
+    const getPreviewUrl = () => {
+        // If we already have a blob URL, use it
+        if (blobUrl) return blobUrl;
+
+        // If it's a base64 data URL, it will be converted to blob in useEffect
+        if (fileUrl?.startsWith('data:')) {
+            return fileUrl; // Temporary, will be replaced by blob URL
         }
 
-        return `${baseName}.${ext}`;
+        // Regular URL (Cloudinary, etc.)
+        let url = fileUrl.replace('http://', 'https://');
+        if (!url.match(/\.(pdf|docx?|jpe?g|png|gif|webp)$/i) && url.includes('cloudinary.com')) {
+            return `${url}.${ext}`;
+        }
+        return url;
+    };
+
+    // Get URL for downloading with proper filename
+    const getDownloadUrl = () => {
+        if (!fileUrl) return '';
+
+        // If it's a base64 data URL, return as is for download
+        if (fileUrl.startsWith('data:')) {
+            return fileUrl;
+        }
+
+        let url = fileUrl.replace('http://', 'https://');
+
+        // Ensure URL has extension
+        if (!url.match(/\.(pdf|docx?|jpe?g|png|gif|webp)$/i)) {
+            url = `${url}.${ext}`;
+        }
+
+        const downloadName = fileName || `Surya_S_Resume.${ext}`;
+
+        if (url.includes('cloudinary.com')) {
+            const parts = url.split('/upload/');
+            if (parts.length === 2) {
+                const [base, path] = parts;
+
+                // Add download flag with filename
+                const transformations = `fl_attachment:${encodeURIComponent(downloadName)}`;
+                return `${base}/upload/${transformations}/${path}`;
+            }
+        }
+
+        return url;
     };
 
     const onDocumentLoadSuccess = ({ numPages }) => {
-        console.log("PDF loaded successfully, pages:", numPages);
         setNumPages(numPages);
         setLoading(false);
         setError(null);
+        setUseFallback(false);
     };
 
     const onDocumentLoadError = (error) => {
         console.error("PDF loading error:", error);
-        setError("Failed to load PDF preview. Trying alternative viewer...");
-        setUseFallback(true);
+        setError(`PDF loading failed: ${error.message || 'Unknown error'}`);
         setLoading(false);
+        setUseFallback(true);
     };
 
     const onImageLoad = () => {
-        console.log("Image loaded successfully");
         setLoading(false);
         setError(null);
     };
 
-    const onImageError = () => {
-        console.error("Image loading failed");
-        setError("Failed to load image");
+    const onImageError = (e) => {
+        console.error("Image loading failed", e);
+        setError("Failed to load image. The file may be corrupted or in an unsupported format.");
         setLoading(false);
     };
 
     const getFileIcon = () => {
-        const ext = fileExtension || getExtensionFromType(fileType, fileName);
-        if (ext === 'pdf' || fileType?.includes('pdf'))
-            return <FaFilePdf className="text-red-500" size={24} />;
-        if (['doc', 'docx'].includes(ext) || fileType?.includes('word') || fileType?.includes('document'))
-            return <FaFileWord className="text-blue-500" size={24} />;
-        if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext) || fileType?.includes('image'))
-            return <FaFileImage className="text-green-500" size={24} />;
-        return <FaFilePdf className="text-gray-500" size={24} />;
+        if (ext === 'pdf') return <FaFilePdf className="text-red-500 sm:size-6 size-5" />;
+        if (['doc', 'docx'].includes(ext)) return <FaFileWord className="text-blue-500 sm:size-6 size-5" />;
+        if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return <FaFileImage className="text-green-500 sm:size-6 size-5" />;
+        return <FaFilePdf className="text-gray-500 sm:size-6 size-5" />;
     };
 
     const getFileTypeDisplay = () => {
-        const ext = fileExtension || getExtensionFromType(fileType, fileName);
         const typeMap = {
             'pdf': 'PDF Document',
             'doc': 'Word Document',
@@ -132,35 +173,144 @@ export default function ResumeViewer({ fileUrl, fileType, fileName, fileExtensio
         return typeMap[ext] || 'Document';
     };
 
-    const handleDownload = () => {
-        const link = document.createElement('a');
-        link.href = getDownloadUrl();
-        link.download = getDownloadFileName();
-        link.target = '_blank';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+    const handleDownload = async () => {
+        try {
+            const downloadUrl = getDownloadUrl();
+
+            // Handle base64 data URLs differently
+            if (downloadUrl.startsWith('data:')) {
+                // Create a blob from base64 and download
+                const blob = convertBase64ToBlob(downloadUrl);
+                if (!blob) {
+                    throw new Error('Failed to create download blob');
+                }
+
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = fileName || `Surya_S_Resume.${ext}`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+            } else {
+                // Regular URL download
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = fileName || `Surya_S_Resume.${ext}`;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+        } catch (err) {
+            console.error("Download error:", err);
+            alert("Failed to download file. Please try again.");
+        }
     };
 
     const handleOpenNewTab = () => {
-        window.open(getPreviewUrl(), '_blank', 'noopener,noreferrer');
+        // Use blob URL if available, otherwise use original
+        const url = blobUrl || getPreviewUrl();
+
+        // For base64 without blob URL, create one temporarily
+        if (!blobUrl && fileUrl?.startsWith('data:')) {
+            const blob = convertBase64ToBlob(fileUrl);
+            if (blob) {
+                const tempBlobUrl = URL.createObjectURL(blob);
+                window.open(tempBlobUrl, '_blank', 'noopener,noreferrer');
+                // Clean up after a delay
+                setTimeout(() => URL.revokeObjectURL(tempBlobUrl), 1000);
+                return;
+            }
+        }
+
+        window.open(url, '_blank', 'noopener,noreferrer');
     };
 
-    // Render Google Docs fallback viewer
+    // Calculate responsive dimensions
+    const getResponsiveDimensions = () => {
+        const { width } = windowSize;
+
+        if (width < 640) { // Mobile
+            return {
+                containerWidth: width - 32, // 16px padding on each side
+                containerHeight: Math.max(400, width * 1.2),
+                padding: 'p-2',
+                headerPadding: 'p-3',
+                buttonSize: 'text-xs px-3 py-2',
+                headerGap: 'gap-2'
+            };
+        } else if (width < 768) { // Small tablet
+            return {
+                containerWidth: width - 64,
+                containerHeight: Math.max(500, width * 1.1),
+                padding: 'p-3',
+                headerPadding: 'p-4',
+                buttonSize: 'text-sm px-4 py-2',
+                headerGap: 'gap-3'
+            };
+        } else if (width < 1024) { // Tablet
+            return {
+                containerWidth: width - 96,
+                containerHeight: Math.max(600, width * 0.9),
+                padding: 'p-4',
+                headerPadding: 'p-4',
+                buttonSize: 'text-sm px-4 py-2',
+                headerGap: 'gap-4'
+            };
+        } else { // Desktop
+            return {
+                containerWidth: Math.min(1200, width - 128),
+                containerHeight: Math.max(700, width * 0.7),
+                padding: 'p-4',
+                headerPadding: 'p-4',
+                buttonSize: 'text-sm px-4 py-2',
+                headerGap: 'gap-4'
+            };
+        }
+    };
+
+    const responsive = getResponsiveDimensions();
+
+    // Render Google Docs fallback viewer for PDFs
     const renderGoogleDocsViewer = () => {
+        // Google Docs viewer doesn't work with blob URLs, so we skip for base64
+        if (fileUrl?.startsWith('data:') || blobUrl) {
+            return (
+                <div className="py-8 sm:py-12 md:py-16 lg:py-20 text-center w-full px-4">
+                    <p className="text-base sm:text-lg md:text-xl font-semibold mb-2 text-gray-600">PDF Preview Unavailable</p>
+                    <p className="text-xs sm:text-sm md:text-base text-gray-500 mb-4 sm:mb-6">
+                        The browser's PDF viewer had trouble loading this file.
+                    </p>
+                    <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 justify-center items-center">
+                        <button
+                            onClick={handleDownload}
+                            className="bg-teal-500 px-4 sm:px-6 py-2 rounded hover:bg-teal-400 text-white flex items-center gap-2 transition text-xs sm:text-sm"
+                        >
+                            <FaDownload className="text-xs sm:text-sm" />
+                            <span className="hidden xs:inline">Download to View</span>
+                            <span className="xs:hidden">Download</span>
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        const previewUrl = getPreviewUrl();
         return (
-            <div className="w-full h-[80vh]">
+            <div className="w-full h-full min-h-[50vh]">
                 <iframe
-                    src={`https://docs.google.com/gview?url=${encodeURIComponent(getPreviewUrl())}&embedded=true`}
+                    src={`https://docs.google.com/gview?url=${encodeURIComponent(previewUrl)}&embedded=true`}
                     title={fileName || "Resume"}
                     className="w-full h-full border-0"
                     onLoad={() => {
-                        console.log("Google Docs viewer loaded");
                         setLoading(false);
                     }}
-                    onError={() => {
-                        console.error("Google Docs viewer failed");
-                        setError("Unable to preview document. Please download the file.");
+                    onError={(e) => {
+                        console.error("Google Docs viewer failed", e);
+                        setError("Unable to preview document. Please download the file to view it.");
                         setLoading(false);
                     }}
                 />
@@ -168,58 +318,84 @@ export default function ResumeViewer({ fileUrl, fileType, fileName, fileExtensio
         );
     };
 
+    // Simple PDF viewer using iframe
+    const renderSimplePdfViewer = () => {
+        const previewUrl = blobUrl || getPreviewUrl();
+
+        return (
+            <div className="w-full h-full flex flex-col">
+                <div className="flex-1 overflow-hidden">
+                    <iframe
+                        src={previewUrl}
+                        title={fileName || "Resume"}
+                        className="w-full h-full border-0"
+                        onLoad={() => {
+                            setLoading(false);
+                            setError(null);
+                        }}
+                        onError={(e) => {
+                            console.error("PDF iframe loading failed", e);
+                            setError("Failed to load PDF preview. Please download the file to view it.");
+                            setLoading(false);
+                        }}
+                    />
+                </div>
+            </div>
+        );
+    };
+
     // Render PDF with react-pdf
-    const renderPdfViewer = () => {
+    const renderReactPdfViewer = () => {
+        const fileToRender = pdfFile || (blobUrl ? { url: blobUrl } : getPreviewUrl());
+
         return (
             <div className="w-full h-full flex flex-col">
                 {numPages > 1 && (
-                    <div className="flex justify-center items-center gap-4 p-4 bg-gray-100 border-b">
+                    <div className="flex justify-center items-center gap-2 sm:gap-4 p-2 sm:p-4 bg-gray-100 border-b">
                         <button
                             onClick={() => setPageNumber(prev => Math.max(prev - 1, 1))}
                             disabled={pageNumber <= 1}
-                            className="px-4 py-2 bg-gray-300 rounded disabled:opacity-50 hover:bg-gray-400 transition"
+                            className="px-2 sm:px-4 py-1 sm:py-2 bg-gray-300 rounded disabled:opacity-50 hover:bg-gray-400 transition text-xs sm:text-sm"
                         >
                             Previous
                         </button>
-                        <span className="text-gray-700">
+                        <span className="text-gray-700 text-xs sm:text-sm">
                             Page {pageNumber} of {numPages}
                         </span>
                         <button
                             onClick={() => setPageNumber(prev => Math.min(prev + 1, numPages))}
                             disabled={pageNumber >= numPages}
-                            className="px-4 py-2 bg-gray-300 rounded disabled:opacity-50 hover:bg-gray-400 transition"
+                            className="px-2 sm:px-4 py-1 sm:py-2 bg-gray-300 rounded disabled:opacity-50 hover:bg-gray-400 transition text-xs sm:text-sm"
                         >
                             Next
                         </button>
                     </div>
                 )}
 
-                <div className="flex-1 overflow-auto flex justify-center p-4">
+                <div className="flex-1 overflow-auto flex justify-center p-2 sm:p-4 bg-gray-50">
                     <Document
-                        file={getPreviewUrl()}
+                        file={fileToRender}
                         onLoadSuccess={onDocumentLoadSuccess}
                         onLoadError={onDocumentLoadError}
                         loading={
-                            <div className="flex flex-col items-center justify-center py-20 text-gray-600">
-                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
-                                <div>Loading PDF document...</div>
+                            <div className="flex flex-col items-center justify-center py-8 sm:py-12 md:py-16 lg:py-20 text-gray-600">
+                                <div className="animate-spin rounded-full h-8 w-8 sm:h-12 sm:w-12 border-b-2 border-blue-500 mb-2 sm:mb-4"></div>
+                                <div className="text-sm sm:text-base">Loading PDF document...</div>
                             </div>
                         }
-                        options={{
-                            cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
-                            cMapPacked: true,
-                            httpHeaders: {
-                                // Add any necessary headers for CORS
-                            }
-                        }}
+                        noData={
+                            <div className="flex flex-col items-center justify-center py-8 sm:py-12 md:py-16 lg:py-20 text-gray-600">
+                                <div className="text-sm sm:text-base">No PDF data available</div>
+                            </div>
+                        }
                     >
                         <Page
                             pageNumber={pageNumber}
-                            width={Math.min(800, window.innerWidth - 100)}
+                            width={Math.min(800, windowSize.width - 40)}
                             renderTextLayer={false}
                             renderAnnotationLayer={false}
                             loading={
-                                <div className="flex items-center justify-center py-10 text-gray-600">
+                                <div className="flex items-center justify-center py-4 sm:py-8 md:py-10 text-gray-600 text-sm sm:text-base">
                                     Loading page {pageNumber}...
                                 </div>
                             }
@@ -230,63 +406,84 @@ export default function ResumeViewer({ fileUrl, fileType, fileName, fileExtensio
         );
     };
 
-    // Render appropriate viewer based on file type
-    const renderViewer = () => {
-        const previewUrl = getPreviewUrl();
-        const ext = fileExtension || getExtensionFromType(fileType, fileName);
-        const isPdf = ext === 'pdf' || fileType?.includes('pdf');
-        const isWord = ['doc', 'docx'].includes(ext) || fileType?.includes('word') || fileType?.includes('document');
-        const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext) || fileType?.includes('image');
-
-        console.log("File details:", { ext, isPdf, isWord, isImage, previewUrl });
-
-        if (isPdf) {
-            // For PDFs, try react-pdf first, then fallback to Google Docs
-            if (useFallback) {
-                return renderGoogleDocsViewer();
-            } else {
-                return renderPdfViewer();
-            }
-        } else if (isWord) {
+    // Render Word documents
+    const renderWordViewer = () => {
+        // Office viewer doesn't work with blob URLs or base64
+        if (fileUrl?.startsWith('data:') || blobUrl) {
             return (
-                <div className="w-full h-[80vh]">
-                    <iframe
-                        src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(previewUrl)}`}
-                        title={fileName || "Resume"}
-                        className="w-full h-full border-0"
-                        onLoad={() => {
-                            console.log("Office Online viewer loaded");
-                            setLoading(false);
-                        }}
-                        onError={() => {
-                            console.error("Office Online viewer failed");
-                            setError("Failed to load document preview. Please download the file to view it.");
-                            setLoading(false);
-                        }}
-                    />
-                </div>
-            );
-        } else if (isImage) {
-            return (
-                <div className="flex justify-center items-center h-full p-4">
-                    <img
-                        src={previewUrl}
-                        alt={fileName || "Resume"}
-                        className="max-w-full max-h-full object-contain"
-                        onLoad={onImageLoad}
-                        onError={onImageError}
-                    />
-                </div>
-            );
-        } else {
-            return (
-                <div className="py-20 text-gray-600 text-center w-full">
-                    <p className="text-lg mb-4">Preview not available for this file type</p>
+                <div className="py-8 sm:py-12 md:py-16 lg:py-20 text-center w-full px-4">
+                    <p className="text-base sm:text-lg md:text-xl font-semibold mb-2 text-gray-600">Word Document Preview</p>
+                    <p className="text-xs sm:text-sm md:text-base text-gray-500 mb-4 sm:mb-6">
+                        Word documents need to be downloaded to view properly.
+                    </p>
                     <button
                         onClick={handleDownload}
-                        className="bg-teal-500 px-6 py-3 rounded hover:bg-teal-400 text-white flex items-center gap-2 transition mx-auto"
+                        className="bg-teal-500 px-4 sm:px-6 py-2 sm:py-3 rounded hover:bg-teal-400 text-white flex items-center gap-2 transition text-xs sm:text-sm mx-auto"
                     >
-                        <FaDownload /> Download File
+                        <FaDownload className="text-xs sm:text-sm" /> Download to View
+                    </button>
+                </div>
+            );
+        }
+
+        const previewUrl = getPreviewUrl();
+        return (
+            <div className="w-full h-full min-h-[50vh]">
+                <iframe
+                    src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(previewUrl)}`}
+                    title={fileName || "Resume"}
+                    className="w-full h-full border-0"
+                    onLoad={() => {
+                        setLoading(false);
+                    }}
+                    onError={(e) => {
+                        console.error("Office Online viewer failed", e);
+                        setError("Failed to load document preview. Please download the file to view it.");
+                        setLoading(false);
+                    }}
+                />
+            </div>
+        );
+    };
+
+    // Render images
+    const renderImageViewer = () => {
+        const previewUrl = blobUrl || getPreviewUrl();
+        return (
+            <div className="flex justify-center items-center h-full p-2 sm:p-3 md:p-4 bg-gray-50">
+                <img
+                    src={previewUrl}
+                    alt={fileName || "Resume"}
+                    className="max-w-full max-h-full object-contain shadow-lg rounded"
+                    onLoad={onImageLoad}
+                    onError={onImageError}
+                />
+            </div>
+        );
+    };
+
+    // Render appropriate viewer based on file type
+    const renderViewer = () => {
+        const isPdf = ext === 'pdf';
+        const isWord = ['doc', 'docx'].includes(ext);
+        const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
+
+        if (isPdf) {
+            // For PDFs, use simple iframe viewer as primary since react-pdf has worker issues
+            return renderSimplePdfViewer();
+        } else if (isWord) {
+            return renderWordViewer();
+        } else if (isImage) {
+            return renderImageViewer();
+        } else {
+            return (
+                <div className="py-8 sm:py-12 md:py-16 lg:py-20 text-gray-600 text-center w-full px-4">
+                    <p className="text-base sm:text-lg md:text-xl mb-2 sm:mb-4">Preview not available for this file type</p>
+                    <button
+                        onClick={handleDownload}
+                        className="bg-teal-500 px-4 sm:px-6 py-2 sm:py-3 rounded hover:bg-teal-400 text-white flex items-center gap-2 transition text-xs sm:text-sm mx-auto"
+                    >
+                        <FaDownload className="text-xs sm:text-sm" /> Download File
                     </button>
                 </div>
             );
@@ -294,95 +491,113 @@ export default function ResumeViewer({ fileUrl, fileType, fileName, fileExtensio
     };
 
     useEffect(() => {
-        console.log("ResumeViewer mounted with URL:", fileUrl);
         setLoading(true);
         setError(null);
         setUseFallback(false);
         setPageNumber(1);
         setNumPages(null);
+        setPdfFile(null);
 
-        // Set a timeout to handle stuck loading
-        const loadingTimeout = setTimeout(() => {
-            if (loading) {
-                console.log("Loading timeout reached, trying fallback");
-                setError("Loading taking too long. Trying alternative viewer...");
-                setUseFallback(true);
+        // Convert base64 to blob URL for better performance
+        if (fileUrl?.startsWith('data:')) {
+            const blob = convertBase64ToBlob(fileUrl);
+            if (blob) {
+                const newBlobUrl = URL.createObjectURL(blob);
+                setBlobUrl(newBlobUrl);
+                setPdfFile(blob);
+                setLoading(false);
+            } else {
+                console.log('Failed to create blob URL');
+                setError('Failed to process file. Please try downloading instead.');
                 setLoading(false);
             }
-        }, 10000); // 10 second timeout
+            return;
+        }
 
-        return () => clearTimeout(loadingTimeout);
+        // For external URLs, set the PDF file directly
+        if (fileUrl && ext === 'pdf') {
+            setPdfFile(fileUrl);
+            setLoading(false);
+        }
+
+        return () => {
+            // Clean up blob URL when component unmounts
+            if (blobUrl) {
+                URL.revokeObjectURL(blobUrl);
+            }
+        };
     }, [fileUrl]);
 
     return (
-        <div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center p-4 overflow-auto">
+        <div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center p-2 sm:p-3 md:p-4 overflow-auto scrollbar-hide">
             {/* Header */}
-            <div className="w-full max-w-6xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4 p-4 bg-gray-800 rounded-lg">
-                <div className="flex items-center gap-3">
+            <div className={`w-full max-w-7xl flex flex-col ${responsive.headerGap} ${responsive.headerPadding} bg-gray-800 rounded-lg`}>
+                <div className="flex items-center gap-2 sm:gap-3">
                     {getFileIcon()}
-                    <div>
-                        <h3 className="text-white font-semibold text-lg">
+                    <div className="min-w-0 flex-1">
+                        <h3 className="text-white font-semibold text-sm sm:text-base md:text-lg truncate">
                             {fileName || "Resume"}
                         </h3>
-                        <p className="text-gray-400 text-sm">{getFileTypeDisplay()}</p>
-                        <p className="text-gray-400 text-xs">
-                            Download as: {getDownloadFileName()}
-                        </p>
+                        <p className="text-gray-400 text-xs sm:text-sm truncate">{getFileTypeDisplay()}</p>
                     </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                    <div className="flex gap-2">
-                        <button
-                            onClick={handleOpenNewTab}
-                            className="bg-blue-500 px-4 py-2 rounded hover:bg-blue-400 text-white flex items-center gap-2 transition text-sm"
-                        >
-                            <FaExternalLinkAlt /> Open
-                        </button>
-                        <button
-                            onClick={handleDownload}
-                            className="bg-teal-500 px-4 py-2 rounded hover:bg-teal-400 text-white flex items-center gap-2 transition text-sm"
-                        >
-                            <FaDownload /> Download
-                        </button>
-                        <button
-                            onClick={onClose}
-                            className="bg-red-600 px-4 py-2 rounded hover:bg-red-500 text-white transition text-sm"
-                        >
-                            <FaTimes />
-                        </button>
-                    </div>
+                <div className="flex flex-wrap gap-1 sm:gap-2 justify-end">
+                    <button
+                        onClick={handleOpenNewTab}
+                        className={`bg-blue-500 rounded hover:bg-blue-400 text-white flex items-center gap-1 sm:gap-2 transition ${responsive.buttonSize}`}
+                    >
+                        <FaExternalLinkAlt className="text-xs sm:text-sm" />
+                        <span className="hidden xs:inline">Open</span>
+                    </button>
+                    <button
+                        onClick={handleDownload}
+                        className={`bg-teal-500 rounded hover:bg-teal-400 text-white flex items-center gap-1 sm:gap-2 transition ${responsive.buttonSize}`}
+                    >
+                        <FaDownload className="text-xs sm:text-sm" />
+                        <span className="hidden xs:inline">Download</span>
+                    </button>
+                    <button
+                        onClick={onClose}
+                        className={`bg-red-600 rounded hover:bg-red-500 text-white transition ${responsive.buttonSize} flex items-center justify-center`}
+                    >
+                        <FaTimes className="text-xs sm:text-sm" />
+                    </button>
                 </div>
             </div>
 
             {/* Viewer Content */}
-            <div className="w-full max-w-6xl flex-1 bg-white rounded-lg shadow-2xl overflow-hidden min-h-[500px] flex flex-col">
+            <div className="w-full max-w-7xl flex-1 bg-white rounded-lg shadow-2xl overflow-hidden min-h-[50vh] flex flex-col mt-2 sm:mt-3 md:mt-4">
                 {loading && !error && (
-                    <div className="flex flex-col items-center justify-center py-20 text-gray-600 w-full">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
-                        <div>Loading document preview...</div>
-                        <div className="text-sm text-gray-500 mt-2">This may take a few moments</div>
+                    <div className="flex flex-col items-center justify-center py-8 sm:py-12 md:py-16 lg:py-20 text-gray-600 w-full">
+                        <div className="animate-spin rounded-full h-8 w-8 sm:h-12 sm:w-12 border-b-2 border-blue-500 mb-2 sm:mb-4"></div>
+                        <div className="text-sm sm:text-base text-center">Loading document preview...</div>
+                        <div className="text-xs sm:text-sm text-gray-500 mt-1 sm:mt-2 text-center">This may take a few moments</div>
                     </div>
                 )}
 
                 {error && (
-                    <div className="py-20 text-red-500 text-center w-full">
-                        <p className="text-lg font-semibold mb-2">Unable to preview document</p>
-                        <p className="text-sm text-gray-600 mb-4">
+                    <div className="py-8 sm:py-12 md:py-16 lg:py-20 text-center w-full px-3 sm:px-4">
+                        <p className="text-base sm:text-lg md:text-xl font-semibold mb-2 text-red-500">Unable to preview document</p>
+                        <p className="text-xs sm:text-sm md:text-base text-gray-600 mb-4 sm:mb-6 text-center">
                             {error}
                         </p>
-                        <div className="space-y-3">
+                        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 justify-center items-center">
                             <button
                                 onClick={handleOpenNewTab}
-                                className="bg-blue-500 px-6 py-2 rounded hover:bg-blue-400 text-white flex items-center gap-2 transition mx-auto"
+                                className="bg-blue-500 px-4 sm:px-6 py-2 rounded hover:bg-blue-400 text-white flex items-center gap-2 transition text-xs sm:text-sm"
                             >
-                                <FaExternalLinkAlt /> Open in New Tab
+                                <FaExternalLinkAlt className="text-xs sm:text-sm" />
+                                <span className="hidden xs:inline">Open in New Tab</span>
+                                <span className="xs:hidden">Open</span>
                             </button>
                             <button
                                 onClick={handleDownload}
-                                className="bg-teal-500 px-6 py-2 rounded hover:bg-teal-400 text-white flex items-center gap-2 transition mx-auto"
+                                className="bg-teal-500 px-4 sm:px-6 py-2 rounded hover:bg-teal-400 text-white flex items-center gap-2 transition text-xs sm:text-sm"
                             >
-                                <FaDownload /> Download File
+                                <FaDownload className="text-xs sm:text-sm" />
+                                <span className="hidden xs:inline">Download File</span>
+                                <span className="xs:hidden">Download</span>
                             </button>
                         </div>
                     </div>
@@ -390,15 +605,6 @@ export default function ResumeViewer({ fileUrl, fileType, fileName, fileExtensio
 
                 {!loading && !error && renderViewer()}
             </div>
-
-            {/* Debug info (remove in production) */}
-            {process.env.NODE_ENV === 'development' && (
-                <div className="mt-4 p-2 bg-gray-800 rounded text-xs text-gray-400 max-w-6xl w-full">
-                    <div>URL: {fileUrl}</div>
-                    <div>Type: {fileType} | Extension: {fileExtension}</div>
-                    <div>Preview URL: {getPreviewUrl()}</div>
-                </div>
-            )}
         </div>
     );
 }

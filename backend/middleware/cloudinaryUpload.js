@@ -62,7 +62,6 @@ const storage = new CloudinaryStorage({
             folder: "portfolio_uploads",
             resource_type: resource_type,
             public_id: public_id,
-            // IMPORTANT: For raw files, we need to specify format
             format: format,
             access_mode: 'public',
             use_filename: false,
@@ -73,7 +72,7 @@ const storage = new CloudinaryStorage({
 
 const upload = multer({
     storage,
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+    limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         const allowedTypes = [
             'image/jpeg',
