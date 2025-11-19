@@ -1,16 +1,29 @@
 import dotenv from 'dotenv'
 dotenv.config()
-import nodemailer from 'nodemailer';
+import Brevo from "@getbrevo/brevo";
 
-export const sendMail = async (to, subject, html) => {
-	const transporter = nodemailer.createTransport({
-		service: 'Gmail',
-		secure: false,
-		auth: {
-			user: process.env.EMAIL,
-			pass: process.env.EMAIL_PASS,
-		},
-	});
+const apiInstance = new Brevo.TransactionalEmailsApi();
 
-	await transporter.sendMail({ from: process.env.EMAIL, to, subject, html });
+apiInstance.setApiKey(
+	Brevo.TransactionalEmailsApiApiKeys.apiKey,
+	process.env.BREVO_API_KEY
+);
+
+export const sendMail = async ({ to, subject, html }) => {
+	try {
+		const emailData = {
+			sender: {
+				name: "Surya",
+				email: process.env.MAIL_FROM
+			},
+			to: [{ email: to }],
+			subject,
+			htmlContent: html,
+		};
+
+		await apiInstance.sendTransacEmail(emailData);
+
+	} catch (error) {
+		console.log("BREVO ERROR:", error.response?.body || error);
+	}
 };

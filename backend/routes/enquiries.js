@@ -16,23 +16,24 @@ router.post('/', async (req, res) => {
 
 	try {
 		// Email to YOU
-		await sendMail(
-			process.env.EMAIL,
-			'New Portfolio Enquiry',
-			adminNotificationTemplate(name, email, message)
-		);
+		await sendMail({
+			to: process.env.ADMIN_EMAIL,
+			subject: `New Portfolio enquiry from ${name}`,
+			html: adminNotificationTemplate(name, email, message)
+		});
 
 		// Auto reply to USER
-		await sendMail(
-			email,
-			'Thank You for Contacting Me!',
-			userAutoReplyTemplate(name)
-		);
-	} catch (err) {
-		console.error(err);
-	}
+		await sendMail({
+			to: email,
+			subject: 'Thank You for Contacting Me!',
+			html: userAutoReplyTemplate(name)
+		});
 
-	res.json({ msg: 'Enquiry sent' });
+		return res.json({ success: true, msg: "Enquiry sent" });
+	} catch (err) {
+		console.error("Enquiry error:", err);
+		return res.status(500).json({ success: false, msg: "Server error" });
+	}
 });
 
 
@@ -46,22 +47,24 @@ router.get('/', authMiddleware, async (req, res) => {
 router.post('/:id/reply', authMiddleware, async (req, res) => {
 	const { reply } = req.body;
 	const enquiry = await Enquiry.findById(req.params.id);
-	if (!enquiry) return res.status(404).json({ msg: 'Enquiry not found' });
+	if (!enquiry) return res.status(404).json({ success: false, msg: 'Enquiry not found' });
+
+	enquiry.replied = true;
+	enquiry.replyMessage = reply
+	await enquiry.save();
 
 	try {
-		await sendMail(
-			enquiry.email,
-			'Response to Your Enquiry',
-			adminReplyTemplate(enquiry.name, reply)
-		);
+		await sendMail({
+			to: enquiry.email,
+			subject: 'Response to Your Enquiry',
+			html: adminReplyTemplate(enquiry.name, reply)
+		});
 
-		enquiry.replied = true;
-		enquiry.replyMessage = reply
-		await enquiry.save();
 
-		res.json({ msg: 'Reply sent' });
+		res.json({ success: true, msg: 'Reply sent' });
 	} catch (err) {
-		res.status(500).json({ msg: 'Error sending mail' });
+		console.log("Enquiry reply error:", err)
+		res.status(500).json({ success: false, msg: 'Error sending mail' });
 	}
 });
 
