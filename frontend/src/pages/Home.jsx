@@ -99,11 +99,11 @@ export default function Home() {
 
                         <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6 max-w-3xl mx-auto">
                             <div className="bg-gray-800 p-6 rounded-lg text-center">
-                                <div className="text-teal-400 text-2xl font-bold mb-2">1.5+</div>
+                                <div className="text-teal-400 text-2xl font-bold mb-2">1.8+</div>
                                 <div className="text-gray-300">Years Experience</div>
                             </div>
                             <div className="bg-gray-800 p-6 rounded-lg text-center">
-                                <div className="text-teal-400 text-2xl font-bold mb-2">5+</div>
+                                <div className="text-teal-400 text-2xl font-bold mb-2">3+</div>
                                 <div className="text-gray-300">Projects Completed</div>
                             </div>
                             <div className="bg-gray-800 p-6 rounded-lg text-center">
