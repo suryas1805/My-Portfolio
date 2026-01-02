@@ -33,7 +33,7 @@ export default function Hero() {
                 transition={{ delay: 0.3, duration: 1 }}
                 className="text-md sm:text-lg md:text-xl mb-4 mt-2"
             >
-                Software Engineer | Full Stack Developer | MERN Stack
+                Software Engineer | Full Stack Developer | MERN Stack Developer
             </motion.p>
 
             <motion.p
@@ -79,7 +79,9 @@ export default function Hero() {
                     Professional Summary
                 </h2>
                 <p className="text-sm sm:text-md md:text-lg text-gray-200 leading-relaxed">
-                    Full Stack Developer with 1.8+ years of hands-on experience specializing in React, Node.js, Express, and MongoDB, complemented by 2 years in purchasing and operations engineering. Successfully transitioned into software development, bringing strong business acumen and problem-solving skills to technical projects. Contributed to the design and implementation of 3 management systems (LMS, SMS, PMS) across education, automotive, and real estate industries, achieving efficiency gains of 40–70%. Skilled in building scalable web and mobile applications with authentication, payment integrations, and responsive UI/UX. Passionate about delivering clean, efficient code and user-focused solutions that align technology with business growth.
+                    Software Engineer (MERN Stack Developer) with 3.6 years of total professional experience, including 1.10 years in Purchasing and 1.8 years in full-stack software development. Successfully transitioned into software development, bringing strong business acumen and problem-solving skills to technical projects. Contributed to the design and implementation of 4 management systems (LMS, SMS, PMS, Job Portal and Employer Portal) across
+                    education, automotive, complete recruitment-to-onboarding workflows and real estate industries, achieving efficiency gains of 40–70%. Skilled in building scalable web and mobile applications with secure authentication, AWS S3 for storage, and responsive UI/UX. Passionate about delivering clean, efficient code and user-focused solutions that align
+                    technology with business growth.
                 </p>
             </motion.div>
 
